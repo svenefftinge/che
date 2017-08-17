@@ -10,6 +10,7 @@
  */
 package org.eclipse.che.workspace.infrastructure.openshift.environment;
 
+import static java.lang.String.format;
 import static org.eclipse.che.workspace.infrastructure.openshift.Constants.CHE_POD_NAME_LABEL;
 
 import io.fabric8.kubernetes.api.model.Container;
@@ -18,6 +19,7 @@ import io.fabric8.kubernetes.api.model.KubernetesList;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.PersistentVolumeClaim;
 import io.fabric8.kubernetes.api.model.Pod;
+import io.fabric8.kubernetes.api.model.PodSpec;
 import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.openshift.api.model.DeploymentConfig;
 import io.fabric8.openshift.api.model.Route;
@@ -32,6 +34,8 @@ import org.eclipse.che.api.core.model.workspace.config.Environment;
 import org.eclipse.che.api.core.model.workspace.config.MachineConfig;
 import org.eclipse.che.api.core.model.workspace.config.Recipe;
 import org.eclipse.che.api.workspace.server.RecipeDownloader;
+import org.eclipse.che.api.workspace.server.model.impl.EnvironmentImpl;
+import org.eclipse.che.api.workspace.server.model.impl.WarningImpl;
 import org.eclipse.che.api.workspace.server.spi.InfrastructureException;
 import org.eclipse.che.workspace.infrastructure.openshift.OpenShiftClientFactory;
 import org.eclipse.che.workspace.infrastructure.openshift.ServerExposer;
@@ -49,6 +53,7 @@ import org.eclipse.che.workspace.infrastructure.openshift.ServerExposer;
  * @author Sergii Leshchenko
  */
 public class OpenShiftEnvironmentParser {
+
   private final OpenShiftClientFactory clientFactory;
   private final RecipeDownloader recipeDownloader;
 
@@ -59,7 +64,7 @@ public class OpenShiftEnvironmentParser {
     this.recipeDownloader = recipeDownloader;
   }
 
-  public OpenShiftEnvironment parse(Environment environment)
+  public OpenShiftEnvironment parse(EnvironmentImpl environment)
       throws ValidationException, InfrastructureException {
     checkNotNull(environment, "Environment should not be null");
     Recipe recipe = environment.getRecipe();
@@ -127,13 +132,14 @@ public class OpenShiftEnvironmentParser {
   }
 
   private void normalizeEnvironment(
-      OpenShiftEnvironment openShiftEnvironment, Environment environment)
+      OpenShiftEnvironment openShiftEnvironment, EnvironmentImpl environment)
       throws ValidationException {
     for (Pod podConfig : openShiftEnvironment.getPods().values()) {
-      String podName = podConfig.getMetadata().getName();
+      final String podName = podConfig.getMetadata().getName();
       getLabels(podConfig).put(CHE_POD_NAME_LABEL, podName);
-
-      for (Container containerConfig : podConfig.getSpec().getContainers()) {
+      final PodSpec podSpec = podConfig.getSpec();
+      ignoreRestartPolicy(podSpec, podName, environment);
+      for (Container containerConfig : podSpec.getContainers()) {
         String machineName = podName + "/" + containerConfig.getName();
         MachineConfig machineConfig = environment.getMachines().get(machineName);
         if (machineConfig != null && !machineConfig.getServers().isEmpty()) {
@@ -158,6 +164,16 @@ public class OpenShiftEnvironmentParser {
       metadata.setLabels(labels);
     }
     return labels;
+  }
+
+  private void ignoreRestartPolicy(PodSpec podSpec, String podName, EnvironmentImpl environment) {
+    final String restartPolicy = podSpec.getRestartPolicy();
+    if (!"Never".equalsIgnoreCase(restartPolicy)) {
+      final String warnMsg =
+          format("Restart policy '%s' for pod '%s' is ignored", restartPolicy, podName);
+      environment.getWarnings().add(new WarningImpl(101, warnMsg));
+      podSpec.setRestartPolicy("Never");
+    }
   }
 
   private String getContentOfRecipe(Recipe environmentRecipe) throws InfrastructureException {

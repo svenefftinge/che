@@ -100,7 +100,7 @@ public class EnvironmentImpl implements Environment {
   }
 
   @Override
-  public List<? extends Warning> getWarnings() {
+  public List<WarningImpl> getWarnings() {
     if (warnings == null) {
       warnings = new ArrayList<>();
     }
