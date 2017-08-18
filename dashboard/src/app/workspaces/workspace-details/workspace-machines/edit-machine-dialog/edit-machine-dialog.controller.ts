@@ -37,6 +37,10 @@ export class EditMachineDialogController {
   private usedMachinesNames: Array<string>;
   private environment: che.IWorkspaceEnvironment;
   private editorMode: string;
+  /**
+   * Callback which is called when workspace is changed.
+   */
+  private onChange: (environment: che.IWorkspaceEnvironment) => void;
 
   /**
    * Default constructor that is using resource
@@ -178,6 +182,9 @@ export class EditMachineDialogController {
       this.environment = this.environmentManager.getEnvironment(environment, machines);
     }
 
+    if (angular.isFunction(this.onChange)) {
+      this.onChange(this.environment);
+    }
     this.$mdDialog.hide();
   }
 
